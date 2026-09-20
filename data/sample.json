@@ -1,0 +1,9 @@
+{
+  "event_id": "evt-092105-008-0001",
+  "event_type": "CLOSURE_ANNOUNCED",
+  "aggregate_type": "closure_case",
+  "aggregate_id": "bakery-store-exit-001",
+  "occurred_at": "2026-09-20T12:00:00+08:00",
+  "version": 1,
+  "summary": "登记烘焙门店退场清算的首条领域记录"
+}
