@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "烘焙门店退场清算领域事件",
-  "description": "用于跨模块交换事实记录的公共信封。",
+  "description": "跨机构交换事实记录的公共信封。只允许四个既有聚合，事件只追加、不修改；来源系统重试沿用原 event_id 即被幂等吸收。",
   "type": "object",
   "required": [
     "event_id",
@@ -13,21 +13,46 @@
     "summary"
   ],
   "properties": {
-    "event_id": {
-      "type": "string",
-      "minLength": 8,
-      "description": "事件唯一标识"
-    },
+    "event_id": { "type": "string", "minLength": 8, "description": "事件唯一标识，重试必须沿用" },
     "event_type": {
       "type": "string",
       "enum": [
         "CLOSURE_ANNOUNCED",
+        "LEGAL_ENTITY_IDENTIFIED",
+        "ACCRUAL_RECORDED",
+        "TRANSFER_AVAILABILITY_OPENED",
+        "FACT_RECONCILED",
+        "CENTRAL_FACTORY_HALT_ACKNOWLEDGED",
+        "HANDOVER_GATE_CLOSED",
+        "CASE_CLOSED",
+
         "CLAIM_REGISTERED",
+        "CLAIM_NOTICE_MERGED",
+        "CLAIM_CHOICE_MADE",
+        "CLAIM_CHOICE_EXPIRED",
+        "CLAIM_TRANSFER_CONFIRMED",
         "ORDER_TRANSFERRED",
+        "REFUND_APPROVED",
+        "CLAIM_CLOSED",
+
+        "INVENTORY_RECORDED",
+        "DISPOSITION_PROPOSED",
         "INVENTORY_DISPOSED",
-        "PAYMENT_SETTLED"
+        "DISPOSITION_RULE_VIOLATION_REJECTED",
+        "ASSET_RETURN_SCHEDULED",
+        "ASSET_RETURNED",
+
+        "OBLIGATION_REGISTERED",
+        "FUNDS_DEPOSITED",
+        "DISPUTE_FILED",
+        "FREEZE_REQUEST_REJECTED",
+        "PAYMENT_SETTLED",
+        "PAYMENT_REVERSED",
+        "AMOUNT_ESCROWED",
+        "DISPUTE_RESOLVED",
+        "SUPPLIER_PLAN_ACKNOWLEDGED"
       ],
-      "description": "本领域事件类型"
+      "description": "本领域全部事件类型"
     },
     "aggregate_type": {
       "type": "string",
@@ -37,28 +62,512 @@
         "inventory_disposition",
         "settlement_payment"
       ],
-      "description": "业务对象类型"
+      "description": "业务对象类型，不新增聚合：各方重复通知归入这四类事实流"
     },
-    "aggregate_id": {
-      "type": "string",
-      "minLength": 1,
-      "description": "业务对象标识"
-    },
-    "occurred_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "事实发生时间"
-    },
-    "version": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "对象版本"
-    },
-    "summary": {
-      "type": "string",
-      "minLength": 2,
-      "description": "中文事实摘要"
+    "aggregate_id": { "type": "string", "minLength": 1, "description": "业务对象标识" },
+    "occurred_at": { "type": "string", "format": "date-time", "description": "事实发生时间" },
+    "version": { "type": "integer", "minimum": 1, "description": "同一 aggregate_id 内从 1 起单调递增" },
+    "summary": { "type": "string", "minLength": 2, "description": "中文事实摘要" },
+    "case_id": { "type": "string", "description": "所属关闭案件标识" },
+    "payload": { "type": "object", "description": "事件明细，不同事件类型各自约定", "additionalProperties": true },
+    "source_notice_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "被本事件吸收的外部通知编号（重复申报、加盟/商场/供应商多方来函）"
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "event_type": { "const": "CLOSURE_ANNOUNCED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "closure_case" },
+          "payload": {
+            "required": ["store_name", "notice_channels", "choice_deadline", "refund_policy"],
+            "properties": {
+              "store_name": { "type": "string" },
+              "store_address": { "type": "string" },
+              "brand_name": { "type": "string" },
+              "notice_channels": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "choice_deadline": { "type": "string", "format": "date-time" },
+              "planned_close_date": { "type": "string", "format": "date-time" },
+              "refund_policy": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "LEGAL_ENTITY_IDENTIFIED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "closure_case" },
+          "payload": {
+            "required": ["entity_id", "kind", "name"],
+            "properties": {
+              "entity_id": { "type": "string" },
+              "kind": {
+                "enum": ["BRAND", "FRANCHISEE", "LEASING_COMPANY", "CENTRAL_FACTORY", "SUPPLIER", "LANDLORD", "CUSTOMER", "OTHER"]
+              },
+              "name": { "type": "string" },
+              "rights": { "type": "array", "items": { "type": "string" } },
+              "obligations": { "type": "array", "items": { "type": "string" } },
+              "holds_funds_note": { "type": "string", "description": "例如：蛋糕定金收至加盟商个人账户" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "ACCRUAL_RECORDED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "closure_case" },
+          "payload": {
+            "required": ["accrual_id", "kind", "amount_cents", "period_from", "period_to", "responsible_entity_id"],
+            "properties": {
+              "accrual_id": { "type": "string" },
+              "kind": { "enum": ["WAGES", "RENT", "UTILITY", "OTHER"] },
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "period_from": { "type": "string", "format": "date-time" },
+              "period_to": { "type": "string", "format": "date-time" },
+              "responsible_entity_id": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "TRANSFER_AVAILABILITY_OPENED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "closure_case" },
+          "payload": {
+            "required": ["store_id", "store_name", "daily_capacity_orders"],
+            "properties": {
+              "store_id": { "type": "string" },
+              "store_name": { "type": "string" },
+              "daily_capacity_orders": { "type": "integer", "minimum": 0 },
+              "products_supported": { "type": "array", "items": { "type": "string" }, "description": "如：裱花蛋糕、现烤面包、储值余额" },
+              "active_from": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "FACT_RECONCILED" } } },
+      "then": { "properties": { "aggregate_type": { "const": "closure_case" } } }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "CENTRAL_FACTORY_HALT_ACKNOWLEDGED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "closure_case" },
+          "payload": {
+            "required": ["factory_entity_id", "halt_at"],
+            "properties": {
+              "factory_entity_id": { "type": "string" },
+              "halt_at": { "type": "string", "format": "date-time" },
+              "seven_day_prep_note": { "type": "string", "description": "未来七天备料的处置说明" },
+              "returned_batch_ids": { "type": "array", "items": { "type": "string" } },
+              "cancelled_purchase_order_ids": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "HANDOVER_GATE_CLOSED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "closure_case" },
+          "payload": {
+            "required": ["gate"],
+            "properties": {
+              "gate": { "enum": ["ORDERS", "FOOD", "EMPLOYEE_PAY", "LEASED_ASSETS", "SUPPLIER_DEBT"] },
+              "proof": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    { "if": { "properties": { "event_type": { "const": "CASE_CLOSED" } } }, "then": { "properties": { "aggregate_type": { "const": "closure_case" } } } },
+
+    {
+      "if": { "properties": { "event_type": { "const": "CLAIM_REGISTERED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": {
+            "required": ["case_id", "customer_id", "customer_name", "instrument", "amount_cents", "holding_entity_id"],
+            "properties": {
+              "case_id": { "type": "string" },
+              "customer_id": { "type": "string" },
+              "customer_name": { "type": "string" },
+              "contact": { "type": "string" },
+              "instrument": { "enum": ["STORED_VALUE", "CAKE_DEPOSIT", "PREPAID_ORDER"] },
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "holding_entity_id": { "type": "string", "description": "资金实际收取/占有的主体" },
+              "order_ids": { "type": "array", "items": { "type": "string" } },
+              "notice_id": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "CLAIM_NOTICE_MERGED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": {
+            "required": ["merged_into_claim_id", "notice_id"],
+            "properties": { "merged_into_claim_id": { "type": "string" }, "notice_id": { "type": "string" } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "CLAIM_CHOICE_MADE" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": {
+            "required": ["choice"],
+            "properties": {
+              "choice": { "enum": ["TRANSFER", "REFUND"] },
+              "target_store_id": { "type": "string" },
+              "chosen_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "CLAIM_CHOICE_EXPIRED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": { "required": ["default_choice"], "properties": { "default_choice": { "const": "REFUND" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "CLAIM_TRANSFER_CONFIRMED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": {
+            "required": ["target_store_id", "customer_confirmed", "capacity_remaining_orders"],
+            "properties": {
+              "target_store_id": { "type": "string" },
+              "customer_confirmed": { "const": true },
+              "capacity_remaining_orders": { "type": "integer", "minimum": 0 },
+              "confirmed_via": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "ORDER_TRANSFERRED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": {
+            "required": ["target_store_id", "order_ids"],
+            "properties": {
+              "target_store_id": { "type": "string" },
+              "order_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "fulfillment_date": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "REFUND_APPROVED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "customer_claim" },
+          "payload": {
+            "required": ["obligation_id", "amount_cents"],
+            "properties": { "obligation_id": { "type": "string" }, "amount_cents": { "type": "integer", "minimum": 0 } }
+          }
+        }
+      }
+    },
+    { "if": { "properties": { "event_type": { "const": "CLAIM_CLOSED" } } }, "then": { "properties": { "aggregate_type": { "const": "customer_claim" } } } },
+
+    {
+      "if": { "properties": { "event_type": { "const": "INVENTORY_RECORDED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "inventory_disposition" },
+          "payload": {
+            "required": ["batch_id", "kind", "owner_entity_id"],
+            "properties": {
+              "batch_id": { "type": "string" },
+              "kind": {
+                "enum": ["NEAR_EXPIRY_FOOD", "SHELF_STABLE_FOOD", "PACKAGING_MATERIAL", "LEASED_EQUIPMENT"]
+              },
+              "name": { "type": "string" },
+              "quantity": { "type": "number" },
+              "unit": { "type": "string" },
+              "owner_entity_id": { "type": "string", "description": "所有权主体；租赁冷柜为租赁公司，不得按门店资产处置" },
+              "expiry_at": { "type": "string", "format": "date-time" },
+              "asset_tag": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "DISPOSITION_PROPOSED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "inventory_disposition" },
+          "payload": {
+            "required": ["batch_id", "method"],
+            "properties": {
+              "batch_id": { "type": "string" },
+              "method": {
+                "enum": ["DONATION", "EMPLOYEE_SAFE_USE", "DESTRUCTION", "RETURN_TO_FACTORY", "RETURN_TO_OWNER"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "INVENTORY_DISPOSED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "inventory_disposition" },
+          "payload": {
+            "required": ["batch_id", "method", "food_safety_confirmed"],
+            "properties": {
+              "batch_id": { "type": "string" },
+              "method": { "enum": ["DONATION", "EMPLOYEE_SAFE_USE", "DESTRUCTION", "RETURN_TO_FACTORY", "RETURN_TO_OWNER"] },
+              "food_safety_confirmed": { "type": "boolean" },
+              "channel": { "type": "string", "description": "合规去向：公益机构/销毁单位/中央工厂等" },
+              "witness": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "DISPOSITION_RULE_VIOLATION_REJECTED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "inventory_disposition" },
+          "payload": {
+            "required": ["batch_id", "attempted_method", "reason"],
+            "properties": {
+              "batch_id": { "type": "string" },
+              "attempted_method": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "ASSET_RETURN_SCHEDULED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "inventory_disposition" },
+          "payload": {
+            "required": ["batch_id", "lessor_entity_id", "scheduled_at"],
+            "properties": {
+              "batch_id": { "type": "string" },
+              "lessor_entity_id": { "type": "string" },
+              "scheduled_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "ASSET_RETURNED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "inventory_disposition" },
+          "payload": {
+            "required": ["batch_id", "lessor_entity_id", "lessor_confirmed"],
+            "properties": {
+              "batch_id": { "type": "string" },
+              "lessor_entity_id": { "type": "string" },
+              "lessor_confirmed": { "const": true },
+              "condition_note": { "type": "string" },
+              "handover_proof": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    {
+      "if": { "properties": { "event_type": { "const": "OBLIGATION_REGISTERED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["obligation_id", "category", "payee_entity_id", "amount_cents", "priority", "responsible_entity_id"],
+            "properties": {
+              "obligation_id": { "type": "string" },
+              "category": { "enum": ["REFUND", "WAGES", "RENT", "UTILITY", "SUPPLIER", "FRANCHISEE_SETTLEMENT", "OTHER"] },
+              "payee_entity_id": { "type": "string" },
+              "payee_name": { "type": "string" },
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "priority": { "enum": [1, 2, 3, 4, 5], "description": "1 顾客退款 2 工资 3 房租水电 4 供应商 5 加盟结算" },
+              "responsible_entity_id": { "type": "string", "description": "最终承担主体（如蛋糕定金为加盟商）" },
+              "ref_id": { "type": "string", "description": "关联 claim/accrual/供应商对账单" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "FUNDS_DEPOSITED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["amount_cents", "source_entity_id"],
+            "properties": {
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "source_entity_id": { "type": "string" },
+              "purpose": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "DISPUTE_FILED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["dispute_id", "between_entity_ids", "subject", "disputed_amount_cents", "obligation_ids"],
+            "properties": {
+              "dispute_id": { "type": "string" },
+              "between_entity_ids": { "type": "array", "items": { "type": "string" }, "minItems": 2 },
+              "subject": { "type": "string" },
+              "disputed_amount_cents": { "type": "integer", "minimum": 0 },
+              "obligation_ids": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "FREEZE_REQUEST_REJECTED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["requested_by_entity_id", "requested_amount_cents", "matched_dispute_amount_cents", "reason"],
+            "properties": {
+              "requested_by_entity_id": { "type": "string" },
+              "requested_amount_cents": { "type": "integer", "minimum": 0 },
+              "matched_dispute_amount_cents": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "PAYMENT_SETTLED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["entry_seq", "obligation_id", "amount_cents", "payee_entity_id", "category"],
+            "properties": {
+              "entry_seq": { "type": "integer", "minimum": 1, "description": "清算专户流水号，只追加" },
+              "obligation_id": { "type": "string" },
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "payee_entity_id": { "type": "string" },
+              "category": { "type": "string" },
+              "method": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "PAYMENT_REVERSED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["entry_seq", "reverses_entry_seq", "obligation_id", "amount_cents", "reason"],
+            "properties": {
+              "entry_seq": { "type": "integer", "minimum": 1 },
+              "reverses_entry_seq": { "type": "integer", "minimum": 1 },
+              "obligation_id": { "type": "string" },
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "AMOUNT_ESCROWED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["entry_seq", "obligation_ids", "amount_cents", "escrow_account", "reason"],
+            "properties": {
+              "entry_seq": { "type": "integer", "minimum": 1 },
+              "obligation_ids": { "type": "array", "items": { "type": "string" } },
+              "amount_cents": { "type": "integer", "minimum": 0 },
+              "escrow_account": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "DISPUTE_RESOLVED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["dispute_id", "resolution", "resolution_amount_cents"],
+            "properties": {
+              "dispute_id": { "type": "string" },
+              "resolution": { "enum": ["BRAND_BEARS", "FRANCHISEE_BEARS", "SPLIT", "DISMISSED"] },
+              "resolution_amount_cents": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_type": { "const": "SUPPLIER_PLAN_ACKNOWLEDGED" } } },
+      "then": {
+        "properties": {
+          "aggregate_type": { "const": "settlement_payment" },
+          "payload": {
+            "required": ["obligation_ids", "plan"],
+            "properties": {
+              "obligation_ids": { "type": "array", "items": { "type": "string" } },
+              "plan": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": true
 }

@@ -5,5 +5,14 @@
   "aggregate_id": "bakery-store-exit-001",
   "occurred_at": "2026-09-20T12:00:00+08:00",
   "version": 1,
-  "summary": "登记烘焙门店退场清算的首条领域记录"
+  "summary": "麦香时光文三路店启动退场清算，已在门店、公众号与会员短信公告",
+  "payload": {
+    "store_name": "麦香时光文三路店",
+    "store_address": "杭州市文三路 88 号",
+    "brand_name": "麦香时光",
+    "notice_channels": ["门店公告", "公众号", "会员短信", "商场告示栏"],
+    "choice_deadline": "2026-10-20T23:59:59+08:00",
+    "planned_close_date": "2026-10-25T22:00:00+08:00",
+    "refund_policy": "选择期内可选择邻店承接或原价退款；逾期未选择按退款处理"
+  }
 }
