@@ -2,8 +2,24 @@
   "event_id": "evt-092105-008-0001",
   "event_type": "CLOSURE_ANNOUNCED",
   "aggregate_type": "closure_case",
-  "aggregate_id": "bakery-store-exit-001",
+  "aggregate_id": "case-001",
+  "case_id": "case-001",
   "occurred_at": "2026-09-20T12:00:00+08:00",
   "version": 1,
-  "summary": "登记烘焙门店退场清算的首条领域记录"
+  "summary": "麦穗烘焙·云栖店公告闭店清算",
+  "payload": {
+    "store": {
+      "store_id": "st-042",
+      "name": "麦穗烘焙·云栖店",
+      "address": "云栖路 88 号",
+      "business_mode": "franchise"
+    },
+    "announced_channels": ["门店公告", "微信公众号", "会员短信"],
+    "last_business_day": "2026-10-08",
+    "central_kitchen": {
+      "id": "ck-01",
+      "name": "中央工厂",
+      "production_horizon_days": 7
+    }
+  }
 }

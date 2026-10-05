@@ -1,30 +1,44 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "烘焙门店退场清算领域事件",
-  "description": "用于跨模块交换事实记录的公共信封。",
+  "description": "用于跨模块交换事实记录的公共信封。事件只追加、不修改；付款通过追加流水表达，旧记录永远不改。",
   "type": "object",
   "required": [
     "event_id",
     "event_type",
     "aggregate_type",
     "aggregate_id",
+    "case_id",
     "occurred_at",
     "version",
-    "summary"
+    "summary",
+    "payload"
   ],
   "properties": {
     "event_id": {
       "type": "string",
       "minLength": 8,
-      "description": "事件唯一标识"
+      "description": "事件唯一标识；来源系统重试必须沿用原标识，接收方据此幂等吸收"
     },
     "event_type": {
       "type": "string",
       "enum": [
         "CLOSURE_ANNOUNCED",
+        "CASE_CLOSED",
+        "SUBJECT_REGISTERED",
         "CLAIM_REGISTERED",
+        "CLAIM_WAIVED",
+        "CUSTOMER_CHOICE_RECORDED",
+        "TRANSFER_CAPACITY_DECLARED",
         "ORDER_TRANSFERRED",
+        "INVENTORY_CLASSIFIED",
         "INVENTORY_DISPOSED",
+        "LEASED_ASSET_RETURN_SCHEDULED",
+        "LEASED_ASSET_RETURNED",
+        "PAYMENT_OBLIGATION_ENTERED",
+        "ACCRUAL_APPENDED",
+        "OBLIGATION_DISPUTED",
+        "DISPUTE_RESOLVED",
         "PAYMENT_SETTLED"
       ],
       "description": "本领域事件类型"
@@ -37,27 +51,40 @@
         "inventory_disposition",
         "settlement_payment"
       ],
-      "description": "业务对象类型"
+      "description": "业务对象类型。全部事实必须归入这四类对象之一"
     },
     "aggregate_id": {
       "type": "string",
       "minLength": 1,
-      "description": "业务对象标识"
+      "description": "业务对象标识；同一对象的多条事件共享该标识，version 递增"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "所属关闭案件标识，便于跨聚合投影未结清单"
     },
     "occurred_at": {
       "type": "string",
       "format": "date-time",
-      "description": "事实发生时间"
+      "description": "事实真实发生时间，不以入库时间替代"
     },
     "version": {
       "type": "integer",
       "minimum": 1,
-      "description": "对象版本"
+      "description": "对象版本，从 1 开始逐事件递增"
     },
     "summary": {
       "type": "string",
       "minLength": 2,
       "description": "中文事实摘要"
+    },
+    "payload": {
+      "type": "object",
+      "description": "事件事实明细，字段约定见 contracts/events.md"
+    },
+    "source_notice_id": {
+      "type": "string",
+      "description": "外部通知标识。微信推送、供应商对账单、租赁公司回执等重复通知携带同一标识时只吸收一次"
     }
   },
   "additionalProperties": true
